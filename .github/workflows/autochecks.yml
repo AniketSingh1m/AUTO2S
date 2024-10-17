@@ -1,0 +1,89 @@
+name: Auto Merge br2 into br1 and main
+
+on:
+  pull_request:
+    branches:
+      - br1
+    types:
+      - opened
+      - synchronize
+
+# Define global permissions for all jobs
+permissions:
+  pull-requests: write  # Gives write access to pull requests (needed for merging)
+  contents: write        # Gives write access to repository contents
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.ref == 'br2'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for all branches
+
+      - name: Auto merge PR if author is correct and merge br2 into main
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            const allowedAuthor = 'sakshi-chauhan-maersk';  // Replace with allowed GitHub username
+            
+            if (pr.head.ref === 'br2' && pr.base.ref === 'br1' && pr.user.login === allowedAuthor) {
+              // Merge br2 into br1
+              await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                merge_method: 'merge',
+              });
+              console.log(`PR #${pr.number} merged into br1 successfully.`);
+              
+              // Now, merge br2 into main
+              const { exec } = require('child_process');
+              
+              // Set Git identity
+              exec('git config --global user.email "action@github.com"', (error) => {
+                if (error) {
+                  console.error(`Error setting git email: ${error.message}`);
+                  return;
+                }
+
+                exec('git config --global user.name "GitHub Action"', (error) => {
+                  if (error) {
+                    console.error(`Error setting git name: ${error.message}`);
+                    return;
+                  }
+
+                  // Checkout main branch
+                  exec('git checkout main', (error) => {
+                    if (error) {
+                      console.error(`Error checking out main: ${error.message}`);
+                      return;
+                    }
+                    
+                    // Merge origin/br2 into main
+                    exec('git merge --no-ff origin/br2', (error) => {
+                      if (error) {
+                        console.error(`Error merging origin/br2 into main: ${error.message}`);
+                        return;
+                      }
+                      
+                      // Push changes to main
+                      exec('git push origin main', (error) => {
+                        if (error) {
+                          console.error(`Error pushing to main: ${error.message}`);
+                          return;
+                        }
+                        
+                        console.log('br2 merged into main successfully.');
+                      });
+                    });
+                  });
+                });
+              });
+            } else {
+              console.log('PR not merged: either the branch or author did not match.');
+            }
